@@ -10,13 +10,9 @@ from email.header import Header
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ContextTypes, filters
 )
-
-# لو تشغل محليًا وتحب تستخدم ملف .env، فعل السطرين التاليين:
-from dotenv import load_dotenv
-load_dotenv()  # يحمل متغيرات البيئة من ملف .env
 
 user_sessions = {}
 stop_flags = {}
@@ -149,10 +145,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if re.match(EMAIL_REGEX, email.strip()) and pwd.strip():
                     pairs.append((email.strip(), pwd.strip()))
         if pairs:
-            if len(session.get("senders", [])) + len(pairs) > MAX_SENDERS:
+            if len(session["senders"]) + len(pairs) > MAX_SENDERS:
                 await update.message.reply_text(f"الحد الأقصى {MAX_SENDERS} حساب.")
             else:
-                session.setdefault("senders", []).extend(pairs)
+                session["senders"].extend(pairs)
                 context.user_data["senders"] = session["senders"]
                 await update.message.reply_text(f"تمت إضافة {len(pairs)} حساب.")
         else:
@@ -251,18 +247,18 @@ async def _send_emails_async(context, user_id, msg):
 
     await context.bot.send_message(chat_id=msg.chat_id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
 
-def main():
-    TOKEN = os.environ.get("BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("Please set the BOT_TOKEN environment variable!")
-    app = ApplicationBuilder().token(TOKEN).build()
+# 🟢 النقطة المهمة هنا: Async startup
+import asyncio
+async def main():
+    TOKEN = os.environ.get("TOKEN")
+    app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
