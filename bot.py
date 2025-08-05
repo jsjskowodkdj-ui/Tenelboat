@@ -7,6 +7,7 @@ import random
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -14,6 +15,7 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters
 )
 
+# متغيرات الجلسة، الإيقاف، الحظر المؤقت، الخ
 user_sessions = {}
 stop_flags = {}
 last_button_click = {}
@@ -55,7 +57,7 @@ def info_menu(session):
         f"المعلومات المضافة:\n\n"
         f"المستلم: {session.get('receiver', 'غير محدد')}\n"
         f"الموضوع: {session.get('subject', 'غير محدد')}\n"
-        f"الرسالة: {session.get('body', 'غير محددة')}\n"
+        f"الرسالة:\n{session.get('body', 'غير محددة')}\n"
         f"العدد: {session.get('count', 'غير محدد')}\n"
         f"التأخير: {session.get('delay', 'غير محدد')}\n"
         f"عدد الحسابات: {len(session.get('senders', []))}"
@@ -73,9 +75,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     stop_flags[user_id] = False
     await update.message.reply_text(
-        'مرحباً بك في بوت الإرسال البريدي\n<a href="https://e.top4top.io/p_3484ox1ie1.jpg">&#8203;</a>',
+        'مرحباً في بوت إرسال الإيميلات\n<a href="https://e.top4top.io/p_3484ox1ie1.jpg">&#8203;</a>',
         parse_mode=ParseMode.HTML,
-        disable_web_page_preview=False,
+        disable_web_page_preview=True,
         reply_markup=main_menu()
     )
 
@@ -103,7 +105,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("أرسل عنوان الرسالة:")
     elif data == "set_body":
         context.user_data["step"] = "body"
-        await query.edit_message_text("أرسل نص الرسالة (سيتم الحفاظ على المسافات والتنسيق):")
+        await query.edit_message_text("أرسل نص الرسالة (سيتم الحفاظ على المسافات والتنسيق كما هو):")
     elif data == "set_delay":
         context.user_data["step"] = "delay"
         await query.edit_message_text("أرسل الوقت بين كل رسالة (بالثواني):")
@@ -125,7 +127,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("تأكد من إدخال جميع البيانات.")
             return
         await context.bot.delete_message(chat_id=query.message.chat_id, message_id=query.message.message_id)
-        msg = await context.bot.send_message(chat_id=query.message.chat_id, text="جاري الإرسال...\n/stop لإيقاف العملية")
+        msg = await context.bot.send_message(chat_id=query.message.chat_id, text="جاري الإرسال...\nاكتب /stop لإيقاف العملية")
         threading.Thread(target=send_all_emails, args=(context, user_id, msg)).start()
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,7 +138,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("استخدم /start للرجوع للقائمة.")
         return
 
-    value = update.message.text.strip()
+    value = update.message.text
     if step == "senders":
         pairs = []
         for line in value.splitlines():
@@ -218,23 +220,23 @@ async def _send_emails_async(context, user_id, msg):
                     continue
 
                 for i in range(count):
-                    if stop_flags.get(user_id): 
-                        return
+                    if stop_flags.get(user_id): return
                     try:
                         message = MIMEMultipart("alternative")
                         message["From"] = email
                         message["To"] = receiver
 
-                        # استخدم الموضوع كما هو بدون إضافة أي شيء
+                        # استخدم الموضوع كما هو (بدون تعديل)
                         message["Subject"] = Header(subject, 'utf-8')
 
                         message_id = f"{time.time_ns()}.{random.randint(1000,9999)}@{email.split('@')[-1]}"
                         message["Message-ID"] = f"<{message_id}>"
                         message["Date"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
 
-                        # نص الرسالة مع الحفاظ على التنسيق (نوع plain)
-                        unique_body = f"{body}\n\n---\nرقم الرسالة: {i+1}\nمعرف فريد: {message_id}"
-                        message.attach(MIMEText(unique_body, "plain", 'utf-8'))
+                        # حافظ على تنسيق نص الرسالة كما هو (مع التحويل اللازم للسطر الجديد في HTML)
+                        html_body = body.replace('\n', '<br>')
+                        unique_body = f"{html_body}<br><br>---<br>رقم الرسالة: {i+1}<br>معرف فريد: {message_id}"
+                        message.attach(MIMEText(unique_body, "html", 'utf-8'))
 
                         server.sendmail(email, receiver, message.as_string())
                         stats[email] += 1
@@ -249,8 +251,8 @@ async def _send_emails_async(context, user_id, msg):
 
     await context.bot.send_message(chat_id=msg.chat_id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
 
-import asyncio
-async def main():
+
+def main():
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:
         print("خطأ: متغير البيئة TOKEN غير معرّف.")
@@ -263,7 +265,9 @@ async def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    await app.run_polling()
+    print("✅ البوت شغال...")
+    app.run_polling()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
