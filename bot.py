@@ -145,10 +145,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if re.match(EMAIL_REGEX, email.strip()) and pwd.strip():
                     pairs.append((email.strip(), pwd.strip()))
         if pairs:
-            if len(session["senders"]) + len(pairs) > MAX_SENDERS:
+            if len(session.get("senders", [])) + len(pairs) > MAX_SENDERS:
                 await update.message.reply_text(f"الحد الأقصى {MAX_SENDERS} حساب.")
             else:
-                session["senders"].extend(pairs)
+                session.setdefault("senders", []).extend(pairs)
                 context.user_data["senders"] = session["senders"]
                 await update.message.reply_text(f"تمت إضافة {len(pairs)} حساب.")
         else:
@@ -232,7 +232,7 @@ async def _send_emails_async(context, user_id, msg):
                         message["Date"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
 
                         unique_body = f"{body}\n\n---\nرقم الرسالة: {i+1}\nمعرف فريد: {message_id}"
-                        message.attach(MIMEText(unique_body.replace('\n', '<br>'), "html", 'utf-8'))
+                        message.attach(MIMEText(unique_body.replace('\\n', '<br>'), "html", 'utf-8'))
 
                         server.sendmail(email, receiver, message.as_string())
                         stats[email] += 1
@@ -247,10 +247,13 @@ async def _send_emails_async(context, user_id, msg):
 
     await context.bot.send_message(chat_id=msg.chat_id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
 
-# 🟢 النقطة المهمة هنا: Async startup
 import asyncio
 async def main():
     TOKEN = os.environ.get("TOKEN")
+    if not TOKEN:
+        print("خطأ: متغير البيئة TOKEN غير معرّف.")
+        return
+
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
