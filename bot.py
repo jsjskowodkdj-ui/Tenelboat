@@ -7,13 +7,16 @@ import random
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ContextTypes, filters
 )
+
+import asyncio
+import nest_asyncio
+nest_asyncio.apply()  # السماح بتشغيل asyncio داخل حلقة أحداث نشطة مسبقًا
 
 user_sessions = {}
 stop_flags = {}
@@ -125,10 +128,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if any(not session.get(k) for k in required):
             await query.edit_message_text("تأكد من إدخال جميع البيانات.")
             return
-        # حذف رسالة الزر الأصلية
-        await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
-        msg = await context.bot.send_message(chat_id=query.message.chat.id, text="جاري الإرسال...\n/stop لإيقاف العملية")
-        threading.Thread(target=send_all_emails, args=(context, user_id, msg), daemon=True).start()
+        await context.bot.delete_message(chat_id=query.message.chat_id, message_id=query.message.message_id)
+        msg = await context.bot.send_message(chat_id=query.message.chat_id, text="جاري الإرسال...\n/stop لإيقاف العملية")
+        threading.Thread(target=send_all_emails, args=(context, user_id, msg)).start()
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -202,7 +204,7 @@ async def _send_emails_async(context, user_id, msg):
     async def update_status():
         text = "حالة الإرسال:\n" + "\n".join(f"{s} - {stats[s]}" for s, _ in senders)
         try:
-            await context.bot.edit_message_text(chat_id=msg.chat.id, message_id=msg.message_id, text=text)
+            await context.bot.edit_message_text(chat_id=msg.chat_id, message_id=msg.message_id, text=text)
         except:
             pass
 
@@ -216,7 +218,7 @@ async def _send_emails_async(context, user_id, msg):
                     except:
                         time.sleep(2)
                 else:
-                    await context.bot.send_message(chat_id=msg.chat.id, text=f"فشل الدخول إلى {email}")
+                    await context.bot.send_message(chat_id=msg.chat_id, text=f"فشل الدخول إلى {email}")
                     continue
 
                 for i in range(count):
@@ -242,30 +244,34 @@ async def _send_emails_async(context, user_id, msg):
                         await update_status()
                         time.sleep(delay)
                     except Exception as e:
-                        await context.bot.send_message(chat_id=msg.chat.id, text=f"خطأ من {email}: {str(e)}")
+                        await context.bot.send_message(chat_id=msg.chat_id, text=f"خطأ من {email}: {str(e)}")
                         break
         except Exception as e:
-            await context.bot.send_message(chat_id=msg.chat.id, text=f"تعذر فتح الاتصال: {email} - {str(e)}")
+            await context.bot.send_message(chat_id=msg.chat_id, text=f"تعذر فتح الاتصال: {email} - {str(e)}")
 
-    await context.bot.send_message(chat_id=msg.chat.id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
-
-async def main():
-    TOKEN = os.environ.get("TOKEN")
-    if not TOKEN:
-        print("خطأ: متغير البيئة TOKEN غير معرّف.")
-        return
-
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stop", stop_command))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-
-    print("✅ البوت شغال...")
-
-    await app.run_polling()
+    await context.bot.send_message(chat_id=msg.chat_id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    async def main_wrapper():
+        TOKEN = os.environ.get("TOKEN")
+        if not TOKEN:
+            print("خطأ: متغير البيئة TOKEN غير معرّف.")
+            return
+
+        app = Application.builder().token(TOKEN).build()
+
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("stop", stop_command))
+        app.add_handler(CallbackQueryHandler(button_handler))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+        await app.run_polling()
+
+    try:
+        asyncio.run(main_wrapper())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(main_wrapper())
+        else:
+            raise
