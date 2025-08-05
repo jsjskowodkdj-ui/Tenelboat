@@ -1,1 +1,1 @@
-pip install python-telegram-bot==20.8 --force-reinstall
+python-telegram-bot==20.8
