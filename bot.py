@@ -14,10 +14,6 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters
 )
 
-import asyncio
-import nest_asyncio
-nest_asyncio.apply()  # السماح بتشغيل asyncio داخل حلقة أحداث نشطة مسبقًا
-
 user_sessions = {}
 stop_flags = {}
 last_button_click = {}
@@ -77,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     stop_flags[user_id] = False
     await update.message.reply_text(
-        'Welcome to the mail bot\n<a href="https://e.top4top.io/p_3484ox1ie1.jpg">&#8203;</a>',
+        'مرحباً بك في بوت الإرسال البريدي\n<a href="https://e.top4top.io/p_3484ox1ie1.jpg">&#8203;</a>',
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=False,
         reply_markup=main_menu()
@@ -222,21 +218,23 @@ async def _send_emails_async(context, user_id, msg):
                     continue
 
                 for i in range(count):
-                    if stop_flags.get(user_id): return
+                    if stop_flags.get(user_id): 
+                        return
                     try:
                         message = MIMEMultipart("alternative")
                         message["From"] = email
                         message["To"] = receiver
 
-                        unique_subject = f"{subject} (ID:{time.time_ns()})"
-                        message["Subject"] = Header(unique_subject, 'utf-8')
+                        # استخدم الموضوع كما هو بدون إضافة أي شيء
+                        message["Subject"] = Header(subject, 'utf-8')
 
                         message_id = f"{time.time_ns()}.{random.randint(1000,9999)}@{email.split('@')[-1]}"
                         message["Message-ID"] = f"<{message_id}>"
                         message["Date"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
 
+                        # نص الرسالة مع الحفاظ على التنسيق (نوع plain)
                         unique_body = f"{body}\n\n---\nرقم الرسالة: {i+1}\nمعرف فريد: {message_id}"
-                        message.attach(MIMEText(unique_body.replace('\\n', '<br>'), "html", 'utf-8'))
+                        message.attach(MIMEText(unique_body, "plain", 'utf-8'))
 
                         server.sendmail(email, receiver, message.as_string())
                         stats[email] += 1
@@ -251,27 +249,21 @@ async def _send_emails_async(context, user_id, msg):
 
     await context.bot.send_message(chat_id=msg.chat_id, text=f"تم الإرسال بنجاح. المجموع: {total_sent} رسالة.", disable_web_page_preview=True)
 
+import asyncio
+async def main():
+    TOKEN = os.environ.get("TOKEN")
+    if not TOKEN:
+        print("خطأ: متغير البيئة TOKEN غير معرّف.")
+        return
+
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop_command))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    await app.run_polling()
+
 if __name__ == "__main__":
-    async def main_wrapper():
-        TOKEN = os.environ.get("TOKEN")
-        if not TOKEN:
-            print("خطأ: متغير البيئة TOKEN غير معرّف.")
-            return
-
-        app = Application.builder().token(TOKEN).build()
-
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("stop", stop_command))
-        app.add_handler(CallbackQueryHandler(button_handler))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-
-        await app.run_polling()
-
-    try:
-        asyncio.run(main_wrapper())
-    except RuntimeError as e:
-        if "asyncio.run() cannot be called from a running event loop" in str(e):
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(main_wrapper())
-        else:
-            raise
+    asyncio.run(main())
